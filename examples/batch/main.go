@@ -1,13 +1,21 @@
 package main
 
-import "github.com/rosedblabs/rosedb/v2"
+import (
+	"github.com/rosedblabs/rosedb/v2"
+	"runtime"
+)
 
 // this file shows how to use the batch operations of rosedb
 
 func main() {
 	// specify the options
 	options := rosedb.DefaultOptions
-	options.DirPath = "/tmp/rosedb_batch"
+	sysType := runtime.GOOS
+	if sysType == "windows" {
+		options.DirPath = "C:\\rosedb_batch"
+	} else {
+		options.DirPath = "/tmp/rosedb_batch"
+	}
 
 	// open a database
 	db, err := rosedb.Open(options)
@@ -33,6 +41,9 @@ func main() {
 
 	// commit the batch
 	_ = batch.Commit()
+
+	// if you want to cancel batch, you must call rollback().
+	// _= batch.Rollback()
 
 	// once a batch is committed, it can't be used again
 	// _ = batch.Put([]byte("name1"), []byte("rosedb1")) // don't do this!!!

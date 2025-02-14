@@ -11,6 +11,7 @@ import (
 func destroyDB(db *DB) {
 	_ = db.Close()
 	_ = os.RemoveAll(db.options.DirPath)
+	_ = os.RemoveAll(mergeDirPath(db.options.DirPath))
 }
 
 func TestBatch_Put_Normal(t *testing.T) {
@@ -23,7 +24,23 @@ func TestBatch_Put_Normal(t *testing.T) {
 }
 
 func TestBatch_Put_IncrSegmentFile(t *testing.T) {
-	batchPutAndIterate(t, 64*MB, 5000, 32*KB)
+	batchPutAndIterate(t, 64*MB, 2000, 32*KB)
+	options := DefaultOptions
+	options.SegmentSize = 64 * MB
+	db, err := Open(options)
+	assert.Nil(t, err)
+	defer destroyDB(db)
+
+	generateData(t, db, 1, 2000, 32*KB)
+
+	// write more data to rotate new segment file
+	batch := db.NewBatch(DefaultBatchOptions)
+	for i := 0; i < 1000; i++ {
+		err := batch.Put(utils.GetTestKey(i*100), utils.RandomValue(32*KB))
+		assert.Nil(t, err)
+	}
+	err = batch.Commit()
+	assert.Nil(t, err)
 }
 
 func TestBatch_Get_Normal(t *testing.T) {
@@ -175,4 +192,48 @@ func assertKeyExistOrNot(t *testing.T, db *DB, key []byte, exist bool) {
 		assert.Nil(t, val)
 		assert.Equal(t, ErrKeyNotFound, err)
 	}
+}
+
+func TestBatch_Rollback(t *testing.T) {
+	options := DefaultOptions
+	db, err := Open(options)
+	assert.Nil(t, err)
+	defer destroyDB(db)
+
+	key := []byte("rosedb")
+	value := []byte("val")
+
+	batcher := db.NewBatch(DefaultBatchOptions)
+	err = batcher.Put(key, value)
+	assert.Nil(t, err)
+
+	err = batcher.Rollback()
+	assert.Nil(t, err)
+
+	resp, err := db.Get(key)
+	assert.Equal(t, ErrKeyNotFound, err)
+	assert.Empty(t, resp)
+}
+
+func TestBatch_SetTwice(t *testing.T) {
+	options := DefaultOptions
+	db, err := Open(options)
+	assert.Nil(t, err)
+	defer destroyDB(db)
+
+	batch := db.NewBatch(DefaultBatchOptions)
+	key := []byte("rosedb")
+	value1 := []byte("val1")
+	value2 := []byte("val2")
+	_ = batch.Put(key, value1)
+	_ = batch.Put(key, value2)
+
+	res, err := batch.Get(key)
+	assert.Nil(t, err)
+	assert.Equal(t, res, value2)
+
+	_ = batch.Commit()
+	res2, err := db.Get(key)
+	assert.Nil(t, err)
+	assert.Equal(t, res2, value2)
 }
